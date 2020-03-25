@@ -1,0 +1,192 @@
+from collections import Counter
+from statistics import median, mean
+from tflearn.layers.estimator import regression
+from tflearn.layers.core import input_data, dropout, fully_connected
+import tflearn
+import numpy as np
+import random
+import gym
+import time
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+gym.logger.set_level(40)
+
+
+LR = 1e-3
+env = gym.make("CartPole-v0")
+env.reset()
+goal_steps = 1000
+score_requirement = 110
+initial_games = 60000
+
+
+def some_random_games_first():
+    # Each of these is its own game.
+    for episode in range(5):
+
+        # time.sleep(1)
+        env.reset()
+
+        for t in range(goal_steps):
+
+            # env.render()
+
+            action = env.action_space.sample()
+            #print ('action is ', action)
+
+            observation, reward, done, info = env.step(action)
+            if done:
+                break
+
+# some_random_games_first()
+
+
+def initial_population():
+    # [OBS, MOVES]
+    training_data = []
+    scores = []
+    accepted_scores = []
+
+    for _ in range(initial_games):
+
+        # time.sleep(1)
+
+        score = 0
+        game_memory = []
+        prev_observation = []
+
+        for _ in range(goal_steps):
+
+            # choose random action (0 or 1)
+            action = random.randrange(0, 2)
+
+            # env.render()
+
+            observation, reward, done, info = env.step(action)
+
+            if len(prev_observation) > 0:
+                game_memory.append([prev_observation, action])
+            prev_observation = observation
+            score += reward
+            if done:
+                break
+
+        if score >= score_requirement:
+            accepted_scores.append(score)
+            for data in game_memory:
+
+                # convert to one-hot
+                if data[1] == 1:
+                    output = [0, 1]
+                elif data[1] == 0:
+                    output = [1, 0]
+
+                training_data.append([data[0], output])
+
+        env.reset()
+
+        scores.append(score)
+
+    training_data_save = np.array(training_data)
+    np.save('saved.npy', training_data_save)
+
+    # statistics
+    print('Average accepted score:', mean(accepted_scores))
+    print('Median score for accepted scores:', median(accepted_scores))
+    print(Counter(accepted_scores))
+
+    return training_data
+
+# ---------------------------------
+
+# A simple multilayer perceptron model.
+
+
+def neural_network_model(input_size, output_size):
+
+    network = input_data(shape=[None, input_size, 1], name='input')
+
+    network = fully_connected(network, 128, activation='relu')
+    network = dropout(network, 0.8)
+
+    network = fully_connected(network, 256, activation='relu')
+    network = dropout(network, 0.8)
+
+    network = fully_connected(network, 512, activation='relu')
+    network = dropout(network, 0.8)
+
+    network = fully_connected(network, 256, activation='relu')
+    network = dropout(network, 0.8)
+
+    network = fully_connected(network, 128, activation='relu')
+    network = dropout(network, 0.8)
+
+    network = fully_connected(network, output_size, activation='softmax')
+    network = regression(network, optimizer='adam', learning_rate=LR,
+                         loss='categorical_crossentropy', name='targets')
+    model = tflearn.DNN(network)
+
+    return model
+
+
+def train_model(training_data, model=False):
+
+    X = np.array([i[0] for i in training_data]
+                 ).reshape(-1, len(training_data[0][0]), 1)
+    y = [i[1] for i in training_data]
+
+    if not model:
+        model = neural_network_model(input_size=len(X[0]), output_size=2)
+
+    model.fit({'input': X}, {'targets': y}, n_epoch=5,
+              snapshot_step=500, show_metric=True, run_id='openai_learning')
+    return model
+
+
+print('Getting training data')
+training_data = initial_population()
+
+print('Training')
+model = train_model(training_data)
+
+
+# Testing our model
+print('Testing')
+
+scores = []
+choices = []
+for each_game in range(10):
+
+    score = 0
+    game_memory = []
+    prev_obs = []
+
+    time.sleep(1)
+
+    env.reset()
+    for _ in range(goal_steps):
+
+        env.render()
+
+        if len(prev_obs) == 0:
+            action = random.randrange(0, 2)
+        else:
+            action = np.argmax(model.predict(
+                prev_obs.reshape(-1, len(prev_obs), 1))[0])
+
+        choices.append(action)
+
+        new_observation, reward, done, info = env.step(action)
+        prev_obs = new_observation
+        game_memory.append([new_observation, action])
+        score += reward
+        if done:
+            break
+
+    scores.append(score)
+
+print('Average Score:', sum(scores)/len(scores))
+print('choice 1:{}  choice 0:{}'.format(choices.count(
+    1)/len(choices), choices.count(0)/len(choices)))
+print(score_requirement)
