@@ -17,7 +17,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 env = gym.make("CartPole-v0")
 env.reset()
 goal_steps = 1000
-score_requirement = 110
 
 
 # Define Model
@@ -53,7 +52,6 @@ def main():
 
     # Checkpoint path to stored model
     checkpoint_path = "model/cp.ckpt"
-    checkpoint_dir = os.path.dirname(checkpoint_path)
 
     # Load previous weights
     model.load_weights(checkpoint_path)
@@ -99,7 +97,6 @@ def main():
         scores.append(score)
         print('Score:', score)
 
-    print('Score requirement:', score_requirement)
     print('Average Score:', sum(scores)/len(scores))
     print('choice 1:{}  choice 0:{}'.format(choices.count(
         1)/len(choices), choices.count(0)/len(choices)))
